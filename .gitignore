@@ -1,0 +1,21 @@
+# Local secrets
+/local-keys/
+
+# Gradle
+.gradle/
+build/
+
+# Compiled output
+bin/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment configuration
+src/main/resources/application-local.properties
