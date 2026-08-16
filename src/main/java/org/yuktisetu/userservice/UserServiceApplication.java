@@ -9,8 +9,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 
 @SpringBootApplication
 @EntityScan(basePackages = "org.yuktisetu.db")
-@EnableJpaRepositories(basePackages = "org.yuktisetu.repository")
-@ComponentScan(basePackages = {"org.yuktisetu.core"})
+@EnableJpaRepositories(basePackages = {"org.yuktisetu.repository"})
+@ComponentScan(basePackages = {"org.yuktisetu.core", "org.yuktisetu.userservice"})
 @EnableMethodSecurity
 public class UserServiceApplication {
     public static void main(String[] args) {

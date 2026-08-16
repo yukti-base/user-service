@@ -13,8 +13,10 @@ import org.yuktisetu.userservice.dto.StudentProfileResponse;
 import org.yuktisetu.userservice.service.StudentProfileService;
 import org.yuktisetu.core.security.UserPrincipal;
 
+import javax.management.relation.RoleNotFoundException;
+
 @RestController
-@RequestMapping("/profile")
+@RequestMapping("/student-profile")
 public class StudentProfileController {
 
     private final StudentProfileService studentProfileService;

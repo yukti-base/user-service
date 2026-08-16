@@ -15,7 +15,6 @@ public record StudentProfileRequest(
         Double tenthPercentage,
         Double twelfthPercentage,
         Double coCubesScore,
-        Double compositeScore,
 
         List<String> skills,
         List<CodingProfileDTO> codingProfiles,

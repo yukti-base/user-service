@@ -19,7 +19,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtTokenVerifier tokenVerifier) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtTokenVerifier tokenVerifier) {
         http
                 .csrf(csrf -> csrf.disable()) // stateless bearer-token API, no cookies/sessions to protect
                 .cors(cors -> {})
