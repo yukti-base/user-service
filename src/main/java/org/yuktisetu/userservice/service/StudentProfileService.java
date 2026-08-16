@@ -1,6 +1,7 @@
 package org.yuktisetu.userservice.service;
 
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.yuktisetu.db.Achievement;
@@ -22,6 +23,7 @@ import java.util.List;
 
 @Service
 @AllArgsConstructor
+@Slf4j
 public class StudentProfileService {
 
     private final StudentProfileRepository studentProfileRepository;
@@ -29,14 +31,14 @@ public class StudentProfileService {
 
     @Transactional
     public StudentProfileResponse getProfile(Long userId) {
-        StudentProfile profile = studentProfileRepository.findByUserId(userId)
+        StudentProfile profile = studentProfileRepository.findByUserIdAndUser_IsDeletedFalse(userId)
                 .orElseThrow(ProfileNotFoundException::new);
         return toResponse(profile);
     }
 
     @Transactional
     public StudentProfileResponse updateProfile(Long userId, StudentProfileRequest req) {
-        StudentProfile profile = studentProfileRepository.findByUserId(userId)
+        StudentProfile profile = studentProfileRepository.findByUserIdAndUser_IsDeletedFalse(userId)
                 .orElseGet(() -> createBlankProfile(userId));
 
         // Scalar fields — PATCH semantics: only overwrite if the caller actually sent it.

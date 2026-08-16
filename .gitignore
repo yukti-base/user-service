@@ -1,5 +1,3 @@
-# Local secrets
-/local-keys/
 
 # Gradle
 .gradle/
@@ -18,4 +16,4 @@ bin/
 Thumbs.db
 
 # Local environment configuration
-src/main/resources/application-local.properties
+/src/main/resources/keys/public.pem

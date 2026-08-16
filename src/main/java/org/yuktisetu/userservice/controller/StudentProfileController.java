@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.yuktisetu.userservice.dto.StudentProfileRequest;
 import org.yuktisetu.userservice.dto.StudentProfileResponse;
-import org.yuktisetu.userservice.security.UserPrincipal;
 import org.yuktisetu.userservice.service.StudentProfileService;
+import org.yuktisetu.core.security.UserPrincipal;
 
 @RestController
 @RequestMapping("/profile")
