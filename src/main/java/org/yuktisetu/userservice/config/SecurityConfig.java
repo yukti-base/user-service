@@ -12,16 +12,39 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
+    private static final List<String> ALLOWED_CONNECT_SRC = List.of(
+            "'self'",
+            "https://hoppscotch.io",
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:8081",
+            "http://localhost:8083"
+    );
+
+    private static final String CSP_POLICY = "default-src 'self'; " +
+            "script-src 'self'; " +
+            "style-src 'self'; " +
+            "img-src 'self' data:; " +
+            "font-src 'self'; " +
+            "connect-src " + String.join(" ", ALLOWED_CONNECT_SRC) + "; " +
+            "frame-ancestors 'none'; " +
+            "base-uri 'self'; " +
+            "form-action 'self'";
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtTokenVerifier tokenVerifier) {
         http
-                .csrf(csrf -> csrf.disable()) // stateless bearer-token API, no cookies/sessions to protect
+                .csrf(csrf -> csrf.disable())
                 .cors(cors -> {})
                 .sessionManagement(sm ->
                         sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
@@ -30,12 +53,18 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .anyRequest().authenticated()
                 )
-                // Both from core -- without these, an unauthenticated or
-                // @PreAuthorize-denied request gets Spring Security's bare
-                // default response instead of this app's ErrorResponse JSON.
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new RestAuthenticationEntryPoint())
                         .accessDeniedHandler(new RestAccessDeniedHandler())
+                )
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(CSP_POLICY))
+                        .contentTypeOptions(contentTypeOptions -> contentTypeOptions.disable())
+                        .frameOptions(frameOptions -> frameOptions.deny())
+                        .referrerPolicy(referrerPolicy -> referrerPolicy.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        .addHeaderWriter(new StaticHeadersWriter("X-Content-Type-Options", "nosniff"))
+                        .addHeaderWriter(new StaticHeadersWriter("X-Frame-Options", "DENY"))
+                        .addHeaderWriter(new StaticHeadersWriter("Permissions-Policy", "geolocation=(), microphone=(), camera=()"))
                 )
                 .addFilterBefore(
                         new JwtAuthenticationFilter(tokenVerifier),

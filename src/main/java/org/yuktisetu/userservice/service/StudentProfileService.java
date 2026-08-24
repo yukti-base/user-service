@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.yuktisetu.core.exception.ForbiddenException;
+import org.yuktisetu.core.exception.NotFoundException;
 import org.yuktisetu.db.Achievement;
 import org.yuktisetu.db.CodingProfile;
 import org.yuktisetu.db.ProfessionalProfile;
@@ -19,7 +20,6 @@ import org.yuktisetu.repository.UserRepository;
 import org.yuktisetu.repository.UserRoleAssignmentRepository;
 import org.yuktisetu.userservice.dto.StudentProfileRequest;
 import org.yuktisetu.userservice.dto.StudentProfileResponse;
-import org.yuktisetu.userservice.exception.UserServiceExceptions.ProfileNotFoundException;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -41,7 +41,7 @@ public class StudentProfileService {
         StudentProfile profile = studentProfileRepository.findByUserIdAndUser_IsDeletedFalse(userId)
                 .orElseThrow(() -> {
                     log.warn("Profile fetch failed — no active profile for userId={}", userId);
-                    return new ProfileNotFoundException();
+                    return new NotFoundException("Student profile not found for this user: " + userId);
                 });
 
         assertStudentRole(profile.getUser(), userId);

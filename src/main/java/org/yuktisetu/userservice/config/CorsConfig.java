@@ -18,7 +18,8 @@ public class CorsConfig {
 
         configuration.setAllowedOrigins(List.of(
                 "https://hoppscotch.io",
-                "http://localhost:5173"
+                "http://localhost:3000",
+                "http://localhost:3001"
         ));
 
         configuration.setAllowedMethods(List.of(
