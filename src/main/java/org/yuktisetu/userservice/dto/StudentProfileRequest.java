@@ -1,19 +1,23 @@
 package org.yuktisetu.userservice.dto;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+
 import java.util.Date;
 import java.util.List;
 
+// institution/degree/branch/cgpa/graduationYear/tenthPercentage/
+// twelfthPercentage/semester GPAs are deliberately NOT here -- those are
+// admin-controlled academic facts (sourced from College/Department/
+// UserRoleAssignment.degree and StudentProfile's own admin-set columns),
+// never student-editable. coCubesScore is the one academic field a student
+// does self-report.
 public record StudentProfileRequest(
         Date dateOfBirth,
         String address,
 
-        String institution,
-        String degree,
-        String branch,
-        Double cgpa,
-        Integer graduationYear,
-        Double tenthPercentage,
-        Double twelfthPercentage,
+        @DecimalMin(value = "0", message = "coCubesScore must be between 0 and 800")
+        @DecimalMax(value = "800", message = "coCubesScore must be between 0 and 800")
         Double coCubesScore,
 
         List<String> skills,

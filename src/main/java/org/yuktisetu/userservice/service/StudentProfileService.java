@@ -8,6 +8,8 @@ import org.yuktisetu.core.exception.ForbiddenException;
 import org.yuktisetu.core.exception.NotFoundException;
 import org.yuktisetu.db.Achievement;
 import org.yuktisetu.db.CodingProfile;
+import org.yuktisetu.db.College;
+import org.yuktisetu.db.Department;
 import org.yuktisetu.db.ProfessionalProfile;
 import org.yuktisetu.db.Project;
 import org.yuktisetu.db.StudentProfile;
@@ -38,22 +40,24 @@ public class StudentProfileService {
     public StudentProfileResponse getProfile(Long userId) {
         log.debug("Fetching student profile for userId={}", userId);
 
+        UserRoleAssignment studentAssignment = findActiveStudentAssignment(userId);
+
         StudentProfile profile = studentProfileRepository.findByUserIdAndUser_IsDeletedFalse(userId)
                 .orElseThrow(() -> {
                     log.warn("Profile fetch failed — no active profile for userId={}", userId);
                     return new NotFoundException("Student profile not found for this user: " + userId);
                 });
 
-        assertStudentRole(profile.getUser(), userId);
-
         log.debug("Profile fetch succeeded for userId={}", userId);
-        return toResponse(profile);
+        return toResponse(profile, studentAssignment);
     }
 
     @Transactional
     public StudentProfileResponse updateProfile(Long userId, StudentProfileRequest req) {
         long start = System.currentTimeMillis();
         log.info("Profile update requested for userId={}", userId);
+
+        UserRoleAssignment studentAssignment = findActiveStudentAssignment(userId);
 
         boolean isNewProfile = false;
         StudentProfile profile = studentProfileRepository.findByUserIdAndUser_IsDeletedFalse(userId)
@@ -65,17 +69,15 @@ public class StudentProfileService {
             isNewProfile = true;
         }
 
-        assertStudentRole(profile.getUser(), userId);
-
+        // Only personal details, coCubesScore, and the portfolio collections
+        // are student-editable. institution/degree/branch/cgpa/graduationYear/
+        // tenthPercentage/twelfthPercentage/semester GPAs are admin-controlled
+        // (sourced from College/Department/UserRoleAssignment.degree, or set
+        // via admin-service's bulk-student-import) and are deliberately not
+        // part of StudentProfileRequest at all, so there is nothing to guard
+        // against here -- they simply cannot arrive in this request.
         if (req.dateOfBirth() != null) profile.setDateOfBirth(req.dateOfBirth());
         if (req.address() != null) profile.setAddress(req.address());
-        if (req.institution() != null) profile.setInstitution(req.institution());
-        if (req.degree() != null) profile.setDegree(req.degree());
-        if (req.branch() != null) profile.setBranch(req.branch());
-        if (req.cgpa() != null) profile.setCgpa(req.cgpa());
-        if (req.graduationYear() != null) profile.setGraduationYear(req.graduationYear());
-        if (req.tenthPercentage() != null) profile.setTenthPercentage(req.tenthPercentage());
-        if (req.twelfthPercentage() != null) profile.setTwelfthPercentage(req.twelfthPercentage());
         if (req.coCubesScore() != null) profile.setCoCubesScore(req.coCubesScore());
 
         if (req.skills() != null) {
@@ -151,7 +153,7 @@ public class StudentProfileService {
         long elapsedMs = System.currentTimeMillis() - start;
         log.info("Profile update completed for userId={} — created={}, elapsedMs={}", userId, isNewProfile, elapsedMs);
 
-        return toResponse(saved);
+        return toResponse(saved, studentAssignment);
     }
 
     /** Not persisted here — the single save() in updateProfile() handles the insert. */
@@ -171,19 +173,37 @@ public class StudentProfileService {
                 .build();
     }
 
-    private void assertStudentRole(User user, Long userId) {
-        UserRoleAssignment userRole = userRoleAssignmentRepository.findByUserIdAndIsActiveTrue(userId).getFirst();
-
-        assert userRole != null;
-        RoleType role = userRole.getRole();
-
-        if (role != RoleType.STUDENT) { // adjust to your actual Role type/field
-            log.warn("Access denied — userId={} has role={}, expected STUDENT", userId, role);
-            throw new ForbiddenException(String.format("Access denied, %d cannot perform this action with the role: %s", userId, role));
+    /**
+     * Returns the caller's active STUDENT role assignment -- the source of
+     * truth for institution/branch (College/Department) and degree at
+     * response time, in addition to being the access-control gate this used
+     * to be (assertStudentRole).
+     */
+    private UserRoleAssignment findActiveStudentAssignment(Long userId) {
+        List<UserRoleAssignment> activeRoles = userRoleAssignmentRepository.findByUserIdAndIsActiveTrue(userId);
+        if (activeRoles.isEmpty()) {
+            log.warn("Access denied — userId={} has no active role assignment", userId);
+            throw new ForbiddenException("Access denied: user " + userId + " has no active role assignment");
         }
+        if (activeRoles.size() > 1) {
+            log.warn("User {} has {} active role assignments: {}",
+                    userId, activeRoles.size(), activeRoles.stream().map(UserRoleAssignment::getRole).toList());
+        }
+
+        UserRoleAssignment studentAssignment = activeRoles.stream()
+                .filter(r -> r.getRole() == RoleType.STUDENT)
+                .findFirst()
+                .orElse(null);
+
+        if (studentAssignment == null) {
+            List<RoleType> roles = activeRoles.stream().map(UserRoleAssignment::getRole).toList();
+            log.warn("Access denied — userId={} has role(s)={}, expected STUDENT", userId, roles);
+            throw new ForbiddenException(String.format("Access denied, %d cannot perform this action with the role(s): %s", userId, roles));
+        }
+        return studentAssignment;
     }
 
-    private StudentProfileResponse toResponse(StudentProfile p) {
+    private StudentProfileResponse toResponse(StudentProfile p, UserRoleAssignment studentAssignment) {
         List<StudentProfileRequest.CodingProfileDTO> coding = p.getCodingProfiles().stream()
                 .map(c -> new StudentProfileRequest.CodingProfileDTO(c.getPlatform(), c.getUsername(), c.getProfileLink(), c.getRating()))
                 .toList();
@@ -200,20 +220,31 @@ public class StudentProfileService {
                 .map(c -> new StudentProfileRequest.AchievementDTO(c.getTitle(), c.getDescription()))
                 .toList();
 
+        College college = studentAssignment.getCollege();
+        Department department = studentAssignment.getDepartment();
+
         return new StudentProfileResponse(
                 p.getId(),
                 p.getUser().getId(),
                 p.getDateOfBirth(),
                 p.getAddress(),
-                p.getInstitution(),
-                p.getDegree(),
-                p.getBranch(),
+                college != null ? college.getName() : null,
+                studentAssignment.getDegree(),
+                department != null ? department.getName() : null,
                 p.getCgpa(),
                 p.getGraduationYear(),
                 p.getTenthPercentage(),
                 p.getTwelfthPercentage(),
+                p.getSem1Gpa(),
+                p.getSem2Gpa(),
+                p.getSem3Gpa(),
+                p.getSem4Gpa(),
+                p.getSem5Gpa(),
+                p.getSem6Gpa(),
+                p.getSem7Gpa(),
+                p.getSem8Gpa(),
                 p.getCoCubesScore(),
-                p.getCompositeScore() == null ? null : p.getCompositeScore(),
+                p.getCompositeScore(),
                 new ArrayList<>(p.getSkills()),
                 coding,
                 prof,
