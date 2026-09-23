@@ -4,10 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.yuktisetu.core.security.UserPrincipal;
-import org.yuktisetu.db.UserRoleAssignment;
-import org.yuktisetu.model.RoleHierarchy;
-import org.yuktisetu.model.RoleType;
-import org.yuktisetu.repository.UserRoleAssignmentRepository;
+import org.yuktisetu.identity.db.UserRoleAssignment;
+import org.yuktisetu.identity.model.RoleHierarchy;
+import org.yuktisetu.identity.model.RoleType;
+import org.yuktisetu.identity.repository.UserRoleAssignmentRepository;
 
 import java.util.List;
 

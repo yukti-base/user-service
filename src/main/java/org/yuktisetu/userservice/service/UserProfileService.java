@@ -5,8 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.yuktisetu.core.exception.NotFoundException;
-import org.yuktisetu.db.User;
-import org.yuktisetu.repository.UserRepository;
+import org.yuktisetu.identity.db.User;
+import org.yuktisetu.identity.repository.UserRepository;
 import org.yuktisetu.userservice.dto.UserProfileResponse;
 
 @Service

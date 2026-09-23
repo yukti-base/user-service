@@ -21,7 +21,13 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-    implementation 'org.yuktisetu:user-dal:1.0.0-SNAPSHOT'
+    // user-service owns the profile context; it reads identity for the
+    // account row behind a profile.
+    implementation 'org.yuktisetu:profile-dal:1.0.0-SNAPSHOT'
+    implementation 'org.yuktisetu:identity-dal:1.0.0-SNAPSHOT'
+    // Declared directly now that identity-dal no longer leaks it transitively.
+    // user-service reads college/department names for the profile response.
+    implementation 'org.yuktisetu:institute-dal:1.0.0-SNAPSHOT'
     implementation 'org.yuktisetu:core:1.0.0-SNAPSHOT'
 
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
