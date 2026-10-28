@@ -39,5 +39,26 @@ public record StudentProfileResponse(
         List<StudentProfileRequest.ProfessionalProfileDTO> professionalProfiles,
         List<StudentProfileRequest.ProjectDTO> projects,
         List<StudentProfileRequest.WorkExperienceDTO> workExperiences,
-        List<StudentProfileRequest.AchievementDTO> achievements
-) {}
+        List<StudentProfileRequest.AchievementDTO> achievements,
+        /** Read-only: verification state is set by the adapters and the TnP, never by the student. */
+        List<CertificationView> certifications
+) {
+    /**
+     * What a student is shown about their own certificate. Carries the
+     * verification state, because that is what decides whether it counts toward a
+     * score -- showing the claim without the status would let a student believe an
+     * unverified certificate is contributing when it is not.
+     */
+    public record CertificationView(
+            Long id,
+            String name,
+            String issuer,
+            java.time.LocalDate issuedOn,
+            java.time.LocalDate expiresOn,
+            String credentialId,
+            String credentialUrl,
+            String verificationStatus,
+            String verificationMethod,
+            String verificationNote,
+            boolean scorable) {}
+}

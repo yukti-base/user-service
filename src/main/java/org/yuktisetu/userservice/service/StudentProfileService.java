@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.yuktisetu.core.exception.ForbiddenException;
 import org.yuktisetu.core.exception.NotFoundException;
 import org.yuktisetu.profile.db.Achievement;
+import org.yuktisetu.profile.db.Certification;
 import org.yuktisetu.profile.db.CodingProfile;
 import org.yuktisetu.institute.db.College;
 import org.yuktisetu.institute.db.Department;
@@ -16,6 +17,7 @@ import org.yuktisetu.profile.db.StudentProfile;
 import org.yuktisetu.identity.db.User;
 import org.yuktisetu.identity.db.UserRoleAssignment;
 import org.yuktisetu.profile.db.WorkExperience;
+import org.yuktisetu.profile.model.CodingPlatform;
 import org.yuktisetu.identity.model.RoleType;
 import org.yuktisetu.profile.repository.StudentProfileRepository;
 import org.yuktisetu.identity.repository.UserRepository;
@@ -89,9 +91,19 @@ public class StudentProfileService {
             log.debug("Replacing codingProfiles for userId={} — count={}", userId, req.codingProfiles().size());
             profile.getCodingProfiles().clear();
             for (StudentProfileRequest.CodingProfileDTO d : req.codingProfiles()) {
+                // Tolerant parse: the column is an enum now, but the portal still
+                // sends a label and an unrecognised one must land on OTHER rather
+                // than refusing the whole profile save.
+                CodingPlatform platform = CodingPlatform.fromLabel(d.platform());
+                if (platform == CodingPlatform.OTHER && d.platform() != null && !d.platform().isBlank()) {
+                    log.info("Unrecognised coding platform '{}' for userId={}; stored as OTHER and will not be scraped",
+                            d.platform(), userId);
+                }
+                log.debug("  codingProfile userId={} platform={} -> {} handle={} scrapable={}",
+                        userId, d.platform(), platform, d.username(), platform.isScrapable());
                 profile.getCodingProfiles().add(CodingProfile.builder()
                         .studentProfile(profile)
-                        .platform(d.platform())
+                        .platform(platform)
                         .username(d.username())
                         .profileLink(d.profileLink())
                         .rating(d.rating())
@@ -126,10 +138,18 @@ public class StudentProfileService {
             log.debug("Replacing workExperiences for userId={} — count={}", userId, req.workExperiences().size());
             profile.getWorkExperiences().clear();
             for (StudentProfileRequest.WorkExperienceDTO d : req.workExperiences()) {
+                boolean current = Boolean.TRUE.equals(d.isCurrent());
+                log.debug("  workExperience userId={} company={} start={} end={} current={}",
+                        userId, d.company(), d.startDate(), d.endDate(), current);
                 profile.getWorkExperiences().add(WorkExperience.builder()
                         .studentProfile(profile)
                         .company(d.company())
                         .role(d.role())
+                        .startDate(d.startDate())
+                        // A current role has no end date by definition; accepting one
+                        // would give Experience Relevance two contradictory answers.
+                        .endDate(current ? null : d.endDate())
+                        .isCurrent(current)
                         .duration(d.duration())
                         .description(d.description())
                         .build());
@@ -143,6 +163,31 @@ public class StudentProfileService {
                         .studentProfile(profile)
                         .title(d.title())
                         .description(d.description())
+                        .build());
+            }
+        }
+        if (req.certifications() != null) {
+            log.debug("Replacing certifications for userId={} — count={}", userId, req.certifications().size());
+            // Replace-whole-list, like every other child collection here. The cost
+            // is that re-saving a profile discards previous verification results
+            // and every certificate goes back to PENDING -- which is the honest
+            // outcome, since the student may have edited the very fields that were
+            // verified. Re-verification is queued from here.
+            profile.getCertifications().clear();
+            for (StudentProfileRequest.CertificationDTO d : req.certifications()) {
+                log.debug("  certification userId={} name={} issuer={} hasCredentialUrl={}",
+                        userId, d.name(), d.issuer(), d.credentialUrl() != null && !d.credentialUrl().isBlank());
+                profile.getCertifications().add(Certification.builder()
+                        .studentProfile(profile)
+                        .name(d.name())
+                        .issuer(d.issuer())
+                        .issuedOn(d.issuedOn())
+                        .expiresOn(d.expiresOn())
+                        .credentialId(d.credentialId())
+                        .credentialUrl(d.credentialUrl())
+                        // Verification state is never taken from the request: a
+                        // student who could post VERIFIED_ISSUER would be setting
+                        // their own score. Defaults come from the entity.
                         .build());
             }
         }
@@ -167,6 +212,7 @@ public class StudentProfileService {
                 .professionalProfiles(new ArrayList<>())
                 .projects(new ArrayList<>())
                 .workExperiences(new ArrayList<>())
+                .certifications(new ArrayList<>())
                 .achievements(new ArrayList<>())
                 .createdAt(now)
                 .updatedAt(now)
@@ -205,7 +251,10 @@ public class StudentProfileService {
 
     private StudentProfileResponse toResponse(StudentProfile p, UserRoleAssignment studentAssignment) {
         List<StudentProfileRequest.CodingProfileDTO> coding = p.getCodingProfiles().stream()
-                .map(c -> new StudentProfileRequest.CodingProfileDTO(c.getPlatform(), c.getUsername(), c.getProfileLink(), c.getRating()))
+                // label(), not name(): the student sees "LeetCode", not "LEETCODE".
+                .map(c -> new StudentProfileRequest.CodingProfileDTO(
+                        c.getPlatform() == null ? null : c.getPlatform().label(),
+                        c.getUsername(), c.getProfileLink(), c.getRating()))
                 .toList();
         List<StudentProfileRequest.ProfessionalProfileDTO> prof = p.getProfessionalProfiles().stream()
                 .map(c -> new StudentProfileRequest.ProfessionalProfileDTO(c.getPlatform(), c.getProfileLink()))
@@ -214,10 +263,26 @@ public class StudentProfileService {
                 .map(c -> new StudentProfileRequest.ProjectDTO(c.getTitle(), c.getProjectLink(), c.getDescription(), c.getTechnologies()))
                 .toList();
         List<StudentProfileRequest.WorkExperienceDTO> work = p.getWorkExperiences().stream()
-                .map(c -> new StudentProfileRequest.WorkExperienceDTO(c.getCompany(), c.getRole(), c.getDuration(), c.getDescription()))
+                .map(c -> new StudentProfileRequest.WorkExperienceDTO(
+                        c.getCompany(), c.getRole(),
+                        c.getStartDate(), c.getEndDate(), c.isCurrent(),
+                        c.getDuration(), c.getDescription()))
                 .toList();
         List<StudentProfileRequest.AchievementDTO> achievements = p.getAchievements().stream()
                 .map(c -> new StudentProfileRequest.AchievementDTO(c.getTitle(), c.getDescription()))
+                .toList();
+        // Carries the verification state deliberately: without it a student would
+        // see an unverified certificate listed and assume it is contributing to
+        // their composite score when it contributes nothing.
+        List<StudentProfileResponse.CertificationView> certifications = p.getCertifications().stream()
+                .map(c -> new StudentProfileResponse.CertificationView(
+                        c.getId(), c.getName(), c.getIssuer(),
+                        c.getIssuedOn(), c.getExpiresOn(),
+                        c.getCredentialId(), c.getCredentialUrl(),
+                        c.getVerificationStatus().name(),
+                        c.getVerificationMethod().name(),
+                        c.getVerificationNote(),
+                        c.isScorable()))
                 .toList();
 
         College college = studentAssignment.getCollege();
@@ -229,7 +294,7 @@ public class StudentProfileService {
                 p.getDateOfBirth(),
                 p.getAddress(),
                 college != null ? college.getName() : null,
-                studentAssignment.getDegree(),
+                studentAssignment.getDegree() != null ? studentAssignment.getDegree().getName() : null,
                 department != null ? department.getName() : null,
                 p.getCgpa(),
                 p.getGraduationYear(),
@@ -250,7 +315,8 @@ public class StudentProfileService {
                 prof,
                 projects,
                 work,
-                achievements
+                achievements,
+                certifications
         );
     }
 }
