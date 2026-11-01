@@ -2,10 +2,13 @@ package org.yuktisetu.userservice.document;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.yuktisetu.core.exception.BadRequestException;
+import org.yuktisetu.core.exception.ConflictException;
 import org.yuktisetu.core.exception.ForbiddenException;
 import org.yuktisetu.core.exception.NotFoundException;
 import org.yuktisetu.core.security.UserPrincipal;
@@ -49,6 +52,7 @@ public class StudentDocumentService {
     private final UserRepository userRepository;
     private final FileStorageService storage;
     private final DocumentAccessRecorder accessRecorder;
+    private final NamedParameterJdbcTemplate jdbc;
 
     @Transactional
     public StudentDocumentResponse upload(UserPrincipal actor, StudentDocumentType docType,
@@ -151,6 +155,19 @@ public class StudentDocumentService {
                 throw new ForbiddenException("You do not have permission to delete this document.");
             }
 
+            // A resume a student applied with is what the TnP and the company are
+            // looking at. Deleting the file would leave a broken link on every
+            // one of those applications, so it is refused (decided 2026-11-01);
+            // the student uploads a new one and makes that the one used.
+            List<String> usedBy = drivesUsing(doc.getStorageKey());
+            if (!usedBy.isEmpty()) {
+                log.info("Refused delete of documentId={} studentUserId={}: used by {} application(s)",
+                        documentId, actor.userId(), usedBy.size());
+                throw new ConflictException("DOCUMENT_IN_USE",
+                        "You applied to " + usedBy.size() + " drive(s) with this file (" + String.join(", ", usedBy)
+                                + "), so it can't be deleted. Upload a new one and choose it for future applications.");
+            }
+
             doc.setDeleted(true);
             doc.setDeletedAt(Instant.now());
             doc.setPrimary(false);
@@ -162,13 +179,58 @@ public class StudentDocumentService {
             storage.delete(doc.getStorageKey());
             log.info("Document deleted: id={} studentUserId={}", documentId, actor.userId());
 
-        } catch (NotFoundException | ForbiddenException e) {
+        } catch (NotFoundException | ForbiddenException | ConflictException e) {
             throw e;
         } catch (Exception e) {
             log.error("Failed to delete documentId={} for actorId={}: {}",
                     documentId, actor.userId(), e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Makes this document the one used for new applications. The file each
+     * earlier application was sent with does not change.
+     */
+    @Transactional
+    public StudentDocumentResponse makePrimary(UserPrincipal actor, Long documentId) {
+        try {
+            StudentDocument doc = documentRepository.findByIdAndIsDeletedFalse(documentId)
+                    .orElseThrow(() -> new NotFoundException("Document", documentId));
+            if (!doc.getStudentUserId().equals(actor.userId())) {
+                log.warn("Access denied — userId={} attempted to make documentId={} primary, owned by userId={}",
+                        actor.userId(), documentId, doc.getStudentUserId());
+                throw new ForbiddenException("You do not have permission to change this document.");
+            }
+            if (!doc.isPrimary()) {
+                documentRepository.clearPrimary(actor.userId(), doc.getDocType());
+                doc.setPrimary(true);
+                documentRepository.save(doc);
+            }
+            log.info("Document made primary: id={} studentUserId={} type={}",
+                    documentId, actor.userId(), doc.getDocType());
+            return toResponse(doc);
+        } catch (NotFoundException | ForbiddenException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to make documentId={} primary for actorId={}: {}",
+                    documentId, actor.userId(), e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    /** "Infosys – Systems Engineer" for every live application sent with this file. One query. */
+    private List<String> drivesUsing(String storageKey) {
+        return jdbc.queryForList("""
+                SELECT c.name || ' – ' || p.title
+                  FROM job_applications a
+                  JOIN job_postings p ON p.id = a.posting_id
+                  JOIN companies c ON c.id = p.company_id
+                 WHERE a.resume_storage_key = :key
+                   AND a.is_deleted = false
+                   AND a.status <> 'WITHDRAWN'
+                 ORDER BY a.applied_at
+                """, new MapSqlParameterSource("key", storageKey), String.class);
     }
 
     static StudentDocumentResponse toResponse(StudentDocument d) {

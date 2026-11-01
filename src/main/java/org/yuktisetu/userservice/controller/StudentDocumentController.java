@@ -77,6 +77,16 @@ public class StudentDocumentController {
      * The TnP read path. Every call writes an issuance row before returning a
      * URL -- with public delivery, this log is the whole accountability story.
      */
+    /** Choose which of the student's files is used for new applications. */
+    @PostMapping("/{id}/primary")
+    @PreAuthorize("hasAuthority('ROLE_STUDENT')")
+    public ResponseEntity<YuktiSetuResponse<StudentDocumentResponse>> makePrimary(
+            @AuthenticationPrincipal UserPrincipal actor,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(YuktiSetuResponse.success(
+                documentService.makePrimary(actor, id), "Document will be used for new applications"));
+    }
+
     @GetMapping("/student/{studentUserId}")
     @PreAuthorize(TNP_ROLES)
     public ResponseEntity<YuktiSetuResponse<List<StudentDocumentResponse>>> forStudent(
